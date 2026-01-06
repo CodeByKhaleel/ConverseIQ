@@ -5,3 +5,87 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model User {
+  id          String    @id @default(uuid())
+  email       String?   @unique
+  displayName String?
+  sessions    Session[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Session {
+  id           String                @id @default(uuid())
+  userId       String?
+  user         User?                 @relation(fields: [userId], references: [id])
+  status       SessionStatus         @default(ACTIVE)
+  startedAt    DateTime              @default(now())
+  completedAt  DateTime?
+  answers      Answer[]
+  events       ConversationEvent[]
+
+  @@index([userId])
+}
+
+model Question {
+  id          String       @id @default(uuid())
+  displayText String
+  fieldKey    String
+  order       Int
+  inputType   QuestionType @default(TEXT)
+  isActive    Boolean      @default(true)
+  helpText    String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  answers     Answer[]
+
+  @@unique([order])
+  @@unique([fieldKey])
+}
+
+model Answer {
+  id         String    @id @default(uuid())
+  sessionId  String
+  questionId String
+  response   String
+  createdAt  DateTime  @default(now())
+  session    Session   @relation(fields: [sessionId], references: [id])
+  question   Question  @relation(fields: [questionId], references: [id])
+
+  @@index([sessionId])
+  @@index([questionId])
+  @@unique([sessionId, questionId])
+}
+
+model ConversationEvent {
+  id        String                  @id @default(uuid())
+  sessionId String
+  eventType ConversationEventType
+  metadata  Json?
+  createdAt DateTime                @default(now())
+  session   Session                 @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+  @@index([eventType])
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum QuestionType {
+  TEXT
+  EMAIL
+  NUMBER
+  MULTIPLE_CHOICE
+}
+
+enum ConversationEventType {
+  SESSION_STARTED
+  QUESTION_ASKED
+  ANSWER_RECORDED
+  SESSION_COMPLETED
+}
