@@ -10,7 +10,7 @@ const conversationService = {
     const userInput = payload.user;
     const userId = await resolveUserId(userInput);
 
-    const session = await prisma.session.create({
+    let session = await prisma.session.create({
       data: {
         userId,
         status: SessionStatus.ACTIVE,
@@ -21,7 +21,21 @@ const conversationService = {
       userId,
     });
 
-    const nextQuestion = await fetchNextQuestion(session.id);
+    let nextQuestion = await fetchNextQuestion(session.id);
+
+    if (!nextQuestion) {
+      session = await prisma.session.update({
+        where: { id: session.id },
+        data: {
+          status: SessionStatus.COMPLETED,
+          completedAt: new Date(),
+        },
+      });
+
+      await createEvent(session.id, ConversationEventType.SESSION_COMPLETED, {
+        answerCount: 0,
+      });
+    }
 
     return {
       session,
@@ -31,7 +45,9 @@ const conversationService = {
 
   async getNextQuestion(sessionId) {
     const session = await requireSession(sessionId);
-    const nextQuestion = await fetchNextQuestion(session.id);
+    const nextQuestion = await fetchNextQuestion(session.id, {
+      logEvent: false,
+    });
 
     return {
       session,
@@ -77,12 +93,8 @@ const conversationService = {
     });
 
     let updatedSession = session;
-    let nextQuestion = await findNextQuestionCandidate(sessionId);
-    if (nextQuestion) {
-      await createEvent(sessionId, ConversationEventType.QUESTION_ASKED, {
-        questionId: nextQuestion.id,
-      });
-    } else {
+    const nextQuestion = await fetchNextQuestion(sessionId);
+    if (!nextQuestion) {
       updatedSession = await prisma.session.update({
         where: { id: sessionId },
         data: {
@@ -172,9 +184,10 @@ async function requireSession(sessionId) {
   return session;
 }
 
-async function fetchNextQuestion(sessionId) {
+async function fetchNextQuestion(sessionId, options = {}) {
+  const { logEvent = true } = options;
   const question = await findNextQuestionCandidate(sessionId);
-  if (question) {
+  if (question && logEvent) {
     await createEvent(sessionId, ConversationEventType.QUESTION_ASKED, {
       questionId: question.id,
     });
